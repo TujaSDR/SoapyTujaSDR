@@ -9,9 +9,10 @@ project('SoapyTujaSDR', 'cpp', 'c',
 
 soapysdr_dep = dependency('SoapySDR')
 alsa_dep = dependency('alsa')
+volk_dep = dependency('volk')
 
 sources = ['SoapyTujaSDR.cpp', 'alsa.c']
 soapy_vfzsdr_lib = shared_library('soapytujasdr',
                         sources,
-                        dependencies : [soapysdr_dep, alsa_dep],
+                        dependencies : [soapysdr_dep, alsa_dep, volk_dep],
                         install : true)

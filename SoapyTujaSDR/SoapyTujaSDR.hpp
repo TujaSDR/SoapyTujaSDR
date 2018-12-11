@@ -16,17 +16,27 @@
 #include <fstream>
 #include "alsa.h"
 
+/*
+ 
+ soapy=0,remote=sdr.local,remote:format=CS16
+ 
+ */
+
 class SoapyTujaSDR : public SoapySDR::Device
 {
 private: 
-    snd_pcm_t* d_pcm_handle;
-    uint32_t d_period_frames;
+    snd_pcm_t* d_pcm_capture_handle;
+    snd_pcm_t* d_pcm_playback_handle;
+    const unsigned int d_periods;
+    const unsigned int d_period_frames;
+    const unsigned int d_max_transfer_frames;
     const double d_channels;
     const double d_sample_rate;
-    double d_frequency;
+    
+    double d_center_frequency;
     const std::string d_alsa_device;
     std::vector<int32_t> d_buff;
-
+    
     SoapySDR::ConverterRegistry::ConverterFunction d_converter_func;
     
     // sysfs file handles
@@ -67,14 +77,33 @@ public:
                    int &flags,
                    long long &timeNs,
                    const long timeoutUs = 100000);
-
+    
+    int writeStream (SoapySDR::Stream *stream,
+                     const void *const *buffs,
+                     const size_t numElems,
+                     int &flags,
+                     const long long timeNs=0,
+                     const long timeoutUs=100000);
+    
     // Antennas
     std::vector<std::string> listAntennas(const int direction, const size_t channel) const;
     void setAntenna(const int direction, const size_t channel, const std::string &name);
     std::string getAntenna(const int direction, const size_t channel) const;
     
+    // Time TODO
+    bool hasHardwareTime (const std::string &what="") const;
+    long long getHardwareTime (const std::string &what="") const;
+    
+    // Sensors TODO
+    std::vector<std::string> listSensors (void) const;
+    
     // DC offset
-    bool hasDCOffsetMode(const int direction, const size_t channel) const;
+    //bool hasDCOffsetMode(const int direction, const size_t channel) const;
+    
+    // IQ balance
+    // TODO:
+    void setIQBalance (const int direction, const size_t channel, const std::complex< double > &balance);
+    std::complex< double > getIQBalance (const int direction, const size_t channel) const;
     
     // Gain
     std::vector<std::string> listGains(const int direction, const size_t channel) const;
@@ -101,7 +130,7 @@ public:
     void setSampleRate(const int direction, const size_t channel, const double rate);
     double getSampleRate(const int direction, const size_t channel) const;
     std::vector<double> listSampleRates(const int direction, const size_t channel) const;
-
+    
     // Bandwidth API
     void setBandwidth(const int direction, const size_t channel, const double bw);
     double getBandwidth(const int direction, const size_t channel) const;

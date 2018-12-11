@@ -8,16 +8,19 @@
 
 #pragma once
 
+#include <stdio.h>
+#include <alsa/asoundlib.h>
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-
-#include <stdio.h>
-#include <alsa/asoundlib.h>
-
-snd_pcm_t* alsa_pcm_handle(const char* pcm_name, unsigned int rate, snd_pcm_uframes_t frames, snd_pcm_stream_t stream);
-
+    
+    snd_pcm_t* alsa_pcm_handle(const char* pcm_name,
+                               unsigned int rate,
+                               const unsigned int periods,
+                               snd_pcm_uframes_t frames,
+                               snd_pcm_stream_t stream);
 #ifdef __cplusplus
 }
 #endif
