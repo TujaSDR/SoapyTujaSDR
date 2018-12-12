@@ -50,7 +50,7 @@ d_converter_func_tx(nullptr),
 d_channels(2),
 d_sample_rate(89286),
 d_periods(4),
-d_period_frames(1024),
+d_period_frames(2048),
 d_center_frequency(0),
 d_alsa_device(alsa_device)
 {
