@@ -310,7 +310,7 @@ int SoapyTujaSDR::readStream(SoapySDR::Stream *stream,
     
     // Read from ALSA
     // read numElems or d_period_size whichever the smallest
-    n_err = std::min<size_t>(d_period_frames, numElems);
+    n_err = std::min<size_t>(numElems, d_period_frames);
     n_err = snd_pcm_readi(d_pcm_capture_handle, d_buff_rx.data(), n_err);
     // try to handle xruns
     if(n_err < 0) {
@@ -380,7 +380,7 @@ int SoapyTujaSDR::writeStream (SoapySDR::Stream *stream,
     
     // number of elements or error
     // convert at most this number of elements
-    n_err = std::min<size_t>(d_period_frames, numElems);
+    n_err = std::min<size_t>(numElems, d_period_frames);
     assert(n_err > 0);
     // convert from input format to output format
     d_converter_func_tx(buffs[0], d_buff_tx.data(), n_err, 1.0);
