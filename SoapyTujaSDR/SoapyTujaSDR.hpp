@@ -29,17 +29,18 @@ private:
     snd_pcm_t* d_pcm_playback_handle;
     const unsigned int d_periods;
     const unsigned int d_period_frames;
-    const unsigned int d_max_transfer_frames;
     const double d_channels;
     const double d_sample_rate;
     
     double d_center_frequency;
     const std::string d_alsa_device;
-    std::vector<int32_t> d_buff;
+    std::vector<int32_t> d_buff_rx;
+    std::vector<int32_t> d_buff_tx;
     
-    SoapySDR::ConverterRegistry::ConverterFunction d_converter_func;
+    SoapySDR::ConverterRegistry::ConverterFunction d_converter_func_rx;
+    SoapySDR::ConverterRegistry::ConverterFunction d_converter_func_tx;
     
-    // sysfs file handles
+    // sysfs file handles for driver
     std::fstream d_freq_f;
     
 public:

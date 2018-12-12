@@ -253,6 +253,7 @@
 				OTHER_CFLAGS = (
 					"-I/Users/albin/src/SoapySDR/include",
 					"-I/Users/albin/src/alsa-lib-1.1.4.1/include",
+					"-I/usr/local/include",
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -265,6 +266,7 @@
 				OTHER_CFLAGS = (
 					"-I/Users/albin/src/SoapySDR/include",
 					"-I/Users/albin/src/alsa-lib-1.1.4.1/include",
+					"-I/usr/local/include",
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};

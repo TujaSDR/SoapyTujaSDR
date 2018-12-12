@@ -98,7 +98,7 @@ snd_pcm_t* alsa_pcm_handle(const char* pcm_name,
         return NULL;
     }
     
-    // Start when buffer is full
+    // Start when buffer is half full
     if ((err = snd_pcm_sw_params_set_start_threshold(pcm_handle, swparams, periods * frames)) < 0) {
         fprintf(stderr, "snd_pcm_sw_params_set_start_threshold: %s\n", snd_strerror(err));
         return NULL;
@@ -111,12 +111,11 @@ snd_pcm_t* alsa_pcm_handle(const char* pcm_name,
      return NULL;
      }*/
     
-    //
-    
-    /*if ((err = snd_pcm_sw_params_set_avail_min(pcm_handle, swparams, 64)) < 0) {
+    // We want to at least be able to write this amount of data
+    if ((err = snd_pcm_sw_params_set_avail_min(pcm_handle, swparams, 256)) < 0) {
         fprintf(stderr, "snd_pcm_sw_params_set_avail_min: %s\n", snd_strerror(err));
         return NULL;
-    }*/
+    }
     
     // enable period events when requested */
     /*err = snd_pcm_sw_params_set_period_event(pcm_handle, swparams, 1);
