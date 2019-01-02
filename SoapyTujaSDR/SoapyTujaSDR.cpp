@@ -50,7 +50,7 @@ d_converter_func_tx(nullptr),
 d_channels(2),
 d_sample_rate(89286),
 d_periods(4),
-d_period_frames(2048),
+d_period_frames(1024),
 d_center_frequency(0),
 d_alsa_device(alsa_device)
 {
@@ -141,6 +141,8 @@ SoapySDR::Stream *SoapyTujaSDR::setupStream(const int direction, const std::stri
 {
     SoapySDR_log(SOAPY_SDR_DEBUG, "setupStream");
     
+    // printf("setup stream!\n");
+    
     // Check the format
     if (format == "CF32") {}
     else if (format == "CS32") {}
@@ -167,6 +169,7 @@ SoapySDR::Stream *SoapyTujaSDR::setupStream(const int direction, const std::stri
                                                d_periods,
                                                d_period_frames,
                                                SND_PCM_STREAM_CAPTURE);
+        
         if (d_pcm_capture_handle == nullptr) {
             throw std::runtime_error("alsa_pcm_handle");
         }
@@ -184,6 +187,7 @@ SoapySDR::Stream *SoapyTujaSDR::setupStream(const int direction, const std::stri
                                                d_periods,
                                                d_period_frames,
                                                SND_PCM_STREAM_PLAYBACK);
+        
         if (d_pcm_playback_handle == nullptr) {
             throw std::runtime_error("alsa_pcm_handle");
         }
@@ -191,8 +195,6 @@ SoapySDR::Stream *SoapyTujaSDR::setupStream(const int direction, const std::stri
     
     // Stream can apparently be anything
     return (SoapySDR::Stream *)(new int(direction));
-
-    // return (SoapySDR::Stream *) this;
 }
 
 void SoapyTujaSDR::closeStream(SoapySDR::Stream *stream)
@@ -552,8 +554,7 @@ SoapySDR::RangeList SoapyTujaSDR::getFrequencyRange(const int direction, const s
     if (name == "RF")
     {
         // There's a filter bank switch at 15MHz so do this for now
-        results.push_back(SoapySDR::Range(0, 15000000));
-        results.push_back(SoapySDR::Range(15000000, 45000000));
+        results.push_back(SoapySDR::Range(0, 45000000));
     }
     return results;
 }
