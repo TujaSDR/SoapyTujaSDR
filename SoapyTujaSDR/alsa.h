@@ -1,8 +1,8 @@
 //
 //  alsa.h
-//  fcdsdr
+//  SoapyTujaSDR
 //
-//  Created by Albin Stigö on 21/11/2017.
+//  Created by Albin Stigö on 21/11/2018.
 //  Copyright © 2017 Albin Stigo. All rights reserved.
 //
 
@@ -21,6 +21,7 @@ extern "C"
                                const unsigned int periods,
                                snd_pcm_uframes_t frames,
                                snd_pcm_stream_t stream);
+    
 #ifdef __cplusplus
 }
 #endif

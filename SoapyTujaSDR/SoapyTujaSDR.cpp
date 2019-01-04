@@ -5,41 +5,39 @@
 #include <stdexcept>
 #include <volk/volk.h>
 
+
+// TODO: write generic
 // CS32 => CF32
-static void genericCS32toCF32(const void *srcBuff, void *dstBuff, const size_t numElems, const double scaler)
+static void volkCS32toCF32(const void *srcBuff, void *dstBuff, const size_t numElems, const double scaler)
 {
     // 2 samples per element
     const size_t elemDepth = 2;
-    const float scaling_factor = 4294967294. * scaler; // S32 = 2^(32-1)-1
-
+    const float scaling_factor = INT32_MAX * scaler; // S32 = 2^(32-1)-1
+    
     volk_32i_s32f_convert_32f((float*)dstBuff, (const int32_t*)srcBuff, scaling_factor,
                               static_cast<unsigned int>(numElems * elemDepth));
 }
 
+// TODO write generic
 // CF32 => CS32
-static void genericCF32toCS32(const void *srcBuff, void *dstBuff, const size_t numElems, const double scaler)
+static void volkCF32toCS32(const void *srcBuff, void *dstBuff, const size_t numElems, const double scaler)
 {
     // 2 samples per element
     const size_t elemDepth = 2;
-    const float scaling_factor = 4294967294. * scaler; // S32 = 2^(32-1)-1
+    const float scaling_factor = INT32_MAX * scaler; // S32 = 2^(32-1)-1
     
     volk_32f_s32f_convert_32i((int32_t*)dstBuff, (const float*)srcBuff, scaling_factor,
                               static_cast<unsigned int>(numElems * elemDepth));
 }
 
 // CS32 => CS16 scaler ignored
-static void genericCS32toCS16(const void *srcBuff, void *dstBuff, const size_t numElems, const double scaler)
+static void volkCS32toCS16(const void *srcBuff, void *dstBuff, const size_t numElems, const double scaler)
 {
-    // There is no volk kernel for this yet.
-
     const size_t elemDepth = 2;
+    const float scaling_factor = INT16_MAX * scaler; // S16 max = 2^(16-1)-1
     
-    auto *src = (int32_t*)srcBuff;
-    auto *dst = (int16_t*)dstBuff;
-    for (size_t i = 0; i < numElems*elemDepth; i++)
-    {
-        dst[i] = SoapySDR::S32toS16(src[i]);
-    }
+    volk_32f_s32f_convert_16i((int16_t*)dstBuff, (const float*)srcBuff, scaling_factor,
+                              static_cast<unsigned int>(numElems * elemDepth));
 }
 
 SoapyTujaSDR::SoapyTujaSDR(const std::string &alsa_device) :
@@ -52,12 +50,19 @@ d_sample_rate(89286),
 d_periods(4),
 d_period_frames(1024),
 d_center_frequency(0),
-d_alsa_device(alsa_device)
+d_alsa_device(alsa_device),
+d_tuja(NULL)
 {
     // TODO: maybe make buffer size and periods configurable
     // we have to experiment with these values
+    int err;
     
-    d_freq_f.open("/sys/class/sdr/vfzsdr/frequency");
+    err = tuja_open("/dev/i2c-1", 0x23, &d_tuja);
+    if (err < 0) {
+        throw std::runtime_error("tuja_open" + std::string(strerror(err)));
+    }
+    
+    //d_freq_f.open("/sys/class/sdr/vfzsdr/frequency");
     // Sample buffer
     int buff_size = d_channels * d_period_frames;
     d_buff_rx.resize(buff_size);
@@ -68,7 +73,8 @@ d_alsa_device(alsa_device)
 
 SoapyTujaSDR::~SoapyTujaSDR()
 {
-    d_freq_f.close();
+    tuja_close(d_tuja);
+    // d_freq_f.close();
 }
 
 // Identification API
@@ -116,32 +122,30 @@ SoapySDR::ArgInfoList SoapyTujaSDR::getStreamArgsInfo(const int direction, const
 {
     SoapySDR::ArgInfoList streamArgs;
     /*
-    SoapySDR::ArgInfo chanArg;
-    chanArg.key = "chan";
-    chanArg.value = "stereo_iq";
-    chanArg.name = "Channel Setup";
-    chanArg.description = "Input channel configuration.";
-    chanArg.type = SoapySDR::ArgInfo::STRING;
-    
-    std::vector<std::string> chanOpts;
-    std::vector<std::string> chanOptNames;
-    
-    chanOpts.push_back("stereo_iq");
-    chanOptNames.push_back("Complex L/R = I/Q");
-
-    chanArg.options = chanOpts;
-    chanArg.optionNames = chanOptNames;
-    
-    streamArgs.push_back(chanArg);
-    */
+     SoapySDR::ArgInfo chanArg;
+     chanArg.key = "chan";
+     chanArg.value = "stereo_iq";
+     chanArg.name = "Channel Setup";
+     chanArg.description = "Input channel configuration.";
+     chanArg.type = SoapySDR::ArgInfo::STRING;
+     
+     std::vector<std::string> chanOpts;
+     std::vector<std::string> chanOptNames;
+     
+     chanOpts.push_back("stereo_iq");
+     chanOptNames.push_back("Complex L/R = I/Q");
+     
+     chanArg.options = chanOpts;
+     chanArg.optionNames = chanOptNames;
+     
+     streamArgs.push_back(chanArg);
+     */
     return streamArgs;
 }
 
 SoapySDR::Stream *SoapyTujaSDR::setupStream(const int direction, const std::string &format, const std::vector<size_t> &channels, const SoapySDR::Kwargs &args)
 {
     SoapySDR_log(SOAPY_SDR_DEBUG, "setupStream");
-    
-    // printf("setup stream!\n");
     
     // Check the format
     if (format == "CF32") {}
@@ -183,10 +187,10 @@ SoapySDR::Stream *SoapyTujaSDR::setupStream(const int direction, const std::stri
             throw std::runtime_error("SoapySDR::ConverterRegistry function not found: " + format);
         }
         d_pcm_playback_handle = alsa_pcm_handle(d_alsa_device.c_str(),
-                                               d_sample_rate,
-                                               d_periods,
-                                               d_period_frames,
-                                               SND_PCM_STREAM_PLAYBACK);
+                                                d_sample_rate,
+                                                d_periods,
+                                                d_period_frames,
+                                                SND_PCM_STREAM_PLAYBACK);
         
         if (d_pcm_playback_handle == nullptr) {
             throw std::runtime_error("alsa_pcm_handle");
@@ -200,7 +204,7 @@ SoapySDR::Stream *SoapyTujaSDR::setupStream(const int direction, const std::stri
 void SoapyTujaSDR::closeStream(SoapySDR::Stream *stream)
 {
     const int direction = *reinterpret_cast<int *>(stream);
-
+    
     SoapySDR_log(SOAPY_SDR_DEBUG, "closeStream");
     
     if (direction == SOAPY_SDR_RX) {
@@ -237,7 +241,6 @@ int SoapyTujaSDR::activateStream(SoapySDR::Stream *stream,
     } else if (direction == SOAPY_SDR_TX) {
         // Tx will autostart when buffer is full
         SoapySDR_log(SOAPY_SDR_INFO, "activate playback");
-        // err = snd_pcm_start(d_pcm_playback_handle);
     }
     
     return err;
@@ -275,7 +278,8 @@ int SoapyTujaSDR::readStream(SoapySDR::Stream *stream,
         SoapySDR_log(SOAPY_SDR_ERROR, "readStream d_pcm_capture_handle == nullptr");
         return SOAPY_SDR_STREAM_ERROR;
     }
-
+    
+    // TODO: This checking is slightly convoluted. Could probably be handled better.
     // What state are we in?
     snd_pcm_state_t snd_state = snd_pcm_state(d_pcm_capture_handle);
     switch (snd_state) {
@@ -354,6 +358,7 @@ int SoapyTujaSDR::writeStream (SoapySDR::Stream *stream,
         return SOAPY_SDR_STREAM_ERROR;
     }
     
+    // TODO: This checking is slightly convoluted. Could probably be handled better.
     // Are we prepared or running?
     snd_pcm_state_t snd_state = snd_pcm_state(d_pcm_playback_handle);
     switch (snd_state) {
@@ -386,7 +391,7 @@ int SoapyTujaSDR::writeStream (SoapySDR::Stream *stream,
     assert(n_err > 0);
     // convert from input format to output format
     d_converter_func_tx(buffs[0], d_buff_tx.data(), n_err, 1.0);
-
+    
     //snd_pcm_sframes_t avail = 0, delay = 0;
     //snd_pcm_avail_delay(d_pcm_playback_handle, &avail, &delay);
     
@@ -459,9 +464,9 @@ std::complex<double> SoapyTujaSDR::getIQBalance (const int direction, const size
 /*
  TODO:
  bool SoapyTujaSDR::hasDCOffsetMode(const int direction, const size_t channel) const
-{
-    return false;
-}*/
+ {
+ return false;
+ }*/
 
 std::vector<std::string> SoapyTujaSDR::listGains(const int direction, const size_t channel) const
 {
@@ -524,9 +529,12 @@ void SoapyTujaSDR::setFrequency(const int direction,
     
     if (name == "RF" && d_center_frequency != frequency)
     {
-        d_freq_f << int(frequency);
-        d_freq_f.clear();
-        d_freq_f.seekg(0, std::ios::beg);
+        tuja_set_frequency(d_tuja, frequency);
+        
+        /*d_freq_f << int(frequency);
+         d_freq_f.clear();
+         d_freq_f.seekg(0, std::ios::beg);*/
+        
         d_center_frequency = frequency;
     }
 }
@@ -640,7 +648,7 @@ SoapySDR::KwargsList findTujaSDR(const SoapySDR::Kwargs &args)
     // soapyInfo["device_id"] = std::to_string(0);
     soapyInfo["device"] = "TujaSDR"; // This is usually what is diplayed
     soapyInfo["alsadevice"] = "hw:CARD=tujasdr,DEV=0";
-
+    
     results.push_back(soapyInfo);
     
     return results;
@@ -652,16 +660,18 @@ SoapySDR::Device *makeTujaSDR(const SoapySDR::Kwargs &args)
     
     //create an instance of the device object given the args
     //here we will translate args into something used in the constructor
+    
     std::string alsa_device = args.at("alsadevice");
     return (SoapySDR::Device*) new SoapyTujaSDR(alsa_device);
 }
 
 // Register format converters
-static SoapySDR::ConverterRegistry registerGenericCS32toCF32(SOAPY_SDR_CS32, SOAPY_SDR_CF32, SoapySDR::ConverterRegistry::GENERIC, &genericCS32toCF32);
+static SoapySDR::ConverterRegistry registerVolkCS32toCF32(SOAPY_SDR_CS32, SOAPY_SDR_CF32, SoapySDR::ConverterRegistry::VECTORIZED, &volkCS32toCF32);
 
-static SoapySDR::ConverterRegistry registerGenericCF32toCS32(SOAPY_SDR_CF32, SOAPY_SDR_CS32, SoapySDR::ConverterRegistry::GENERIC, &genericCF32toCS32);
+static SoapySDR::ConverterRegistry registerVolkCF32toCS32(SOAPY_SDR_CF32, SOAPY_SDR_CS32, SoapySDR::ConverterRegistry::VECTORIZED, &volkCF32toCS32);
 
-static SoapySDR::ConverterRegistry registerGenericCS32toCS16(SOAPY_SDR_CS32, SOAPY_SDR_CS16, SoapySDR::ConverterRegistry::GENERIC, &genericCS32toCS16);
+static SoapySDR::ConverterRegistry registerVolkCS32toCS16(SOAPY_SDR_CS32, SOAPY_SDR_CS16, SoapySDR::ConverterRegistry::VECTORIZED, &volkCS32toCS16);
 
 // Register driver
 static SoapySDR::Registry registerTujaSDR("tujasdr", &findTujaSDR, &makeTujaSDR, SOAPY_SDR_ABI_VERSION);
+

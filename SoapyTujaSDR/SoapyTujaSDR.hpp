@@ -14,12 +14,12 @@
 #include <cstdint>
 #include <iostream>
 #include <fstream>
+#include <tuja.h>
+
 #include "alsa.h"
 
 /*
- 
  soapy=0,remote=sdr.local,remote:format=CS16
- 
  */
 
 class SoapyTujaSDR : public SoapySDR::Device
@@ -37,11 +37,11 @@ private:
     std::vector<int32_t> d_buff_rx;
     std::vector<int32_t> d_buff_tx;
     
+    // libtuja hardware control
+    tuja_t *d_tuja;
+    
     SoapySDR::ConverterRegistry::ConverterFunction d_converter_func_rx;
     SoapySDR::ConverterRegistry::ConverterFunction d_converter_func_tx;
-    
-    // sysfs file handles for driver
-    std::fstream d_freq_f;
     
 public:
     SoapyTujaSDR(const std::string &alsa_device);

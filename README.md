@@ -17,4 +17,5 @@ Depends on SoapySDR and ALSA (often called libasound2-dev).
 cd SoapyTujaSDR
 meson build
 ninja -C build
+sudo ninja install
 ```

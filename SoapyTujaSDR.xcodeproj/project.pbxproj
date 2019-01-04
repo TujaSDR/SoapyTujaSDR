@@ -30,6 +30,7 @@
 		B191E1292191BCE200C7A1AF /* meson.build */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = meson.build; sourceTree = "<group>"; };
 		B191E12A2191BCE200C7A1AF /* alsa.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = alsa.h; sourceTree = "<group>"; };
 		B191E12B2191BCE200C7A1AF /* SoapyTujaSDR.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SoapyTujaSDR.cpp; sourceTree = "<group>"; };
+		B1F582D421DCD8C10043834A /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,9 +63,10 @@
 		B191E11F2191BCC600C7A1AF /* SoapyTujaSDR */ = {
 			isa = PBXGroup;
 			children = (
+				B1F582D421DCD8C10043834A /* README.md */,
+				B191E1292191BCE200C7A1AF /* meson.build */,
 				B191E1282191BCE200C7A1AF /* alsa.c */,
 				B191E12A2191BCE200C7A1AF /* alsa.h */,
-				B191E1292191BCE200C7A1AF /* meson.build */,
 				B191E12B2191BCE200C7A1AF /* SoapyTujaSDR.cpp */,
 				B191E1272191BCE100C7A1AF /* SoapyTujaSDR.hpp */,
 			);
