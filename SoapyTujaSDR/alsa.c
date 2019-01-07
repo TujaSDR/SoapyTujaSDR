@@ -8,6 +8,23 @@
 
 #include "alsa.h"
 
+char *snd_pcm_state_str[] = {
+    "SND_PCM_STATE_OPEN",
+    "SND_PCM_STATE_SETUP",
+    "SND_PCM_STATE_PREPARED",
+    "SND_PCM_STATE_RUNNING",
+    "SND_PCM_STATE_XRUN",
+    "SND_PCM_STATE_DRAINING",
+    "SND_PCM_STATE_PAUSED",
+    "SND_PCM_STATE_SUSPENDED",
+    "SND_PCM_STATE_DISCONNECTED",
+    "SND_PCM_STATE_LAST",
+};
+
+const char* alsa_state_str(snd_pcm_state_t state) {
+    return snd_pcm_state_str[state];
+}
+
 /* Try to get an ALSA capture handle */
 snd_pcm_t* alsa_pcm_handle(const char* pcm_name,
                            unsigned int rate,

@@ -3,6 +3,7 @@
 #include <SoapySDR/ConverterPrimitives.hpp>
 #include <algorithm>
 #include <stdexcept>
+#include <errno.h>
 #include <volk/volk.h>
 
 
@@ -61,8 +62,6 @@ d_tuja(NULL)
     if (err < 0) {
         throw std::runtime_error("tuja_open" + std::string(strerror(err)));
     }
-    
-    //d_freq_f.open("/sys/class/sdr/vfzsdr/frequency");
     // Sample buffer
     int buff_size = d_channels * d_period_frames;
     d_buff_rx.resize(buff_size);
@@ -74,7 +73,6 @@ d_tuja(NULL)
 SoapyTujaSDR::~SoapyTujaSDR()
 {
     tuja_close(d_tuja);
-    // d_freq_f.close();
 }
 
 // Identification API
@@ -114,7 +112,7 @@ std::vector<std::string> SoapyTujaSDR::getStreamFormats(const int direction, con
 
 std::string SoapyTujaSDR::getNativeStreamFormat(const int direction, const size_t channel, double &fullScale) const
 {
-    fullScale = 4294967294; // S32 = 2^(32-1)-1
+    fullScale = INT32_MAX;
     return "CS32";
 }
 
@@ -232,15 +230,31 @@ int SoapyTujaSDR::activateStream(SoapySDR::Stream *stream,
                                  const size_t numElems)
 {
     const int direction = *reinterpret_cast<int *>(stream);
-    int err;
+    snd_pcm_state_t snd_state;
+    int err = 0;
     
-    if (direction == SOAPY_SDR_RX) {
-        // For capture we need to start the driver
-        SoapySDR_log(SOAPY_SDR_INFO, "activate capture");
-        err = snd_pcm_start(d_pcm_capture_handle);
-    } else if (direction == SOAPY_SDR_TX) {
-        // Tx will autostart when buffer is full
-        SoapySDR_log(SOAPY_SDR_INFO, "activate playback");
+    
+    switch (direction) {
+        case SOAPY_SDR_RX:
+            snd_state = snd_pcm_state(d_pcm_capture_handle);
+            if(snd_state != SND_PCM_STATE_RUNNING) {
+                err = snd_pcm_prepare(d_pcm_capture_handle);
+            }
+            if (err < 0) {
+                SoapySDR_logf(SOAPY_SDR_ERROR, "activateStream (SOAPY_SDR_RX): %s snd_pcm_prepare %s",
+                              alsa_state_str(snd_state), snd_strerror(err));
+                return err;
+            } break;
+        case SOAPY_SDR_TX:
+            snd_state = snd_pcm_state(d_pcm_playback_handle);
+            if(snd_state != SND_PCM_STATE_RUNNING) {
+                err = snd_pcm_prepare(d_pcm_playback_handle);
+            }
+            if (err < 0) {
+                SoapySDR_logf(SOAPY_SDR_ERROR, "activateStream (SOAPY_SDR_TX): %s snd_pcm_prepare %s",
+                              alsa_state_str(snd_state), snd_strerror(err));
+                return err;
+            } break;
     }
     
     return err;
@@ -249,15 +263,30 @@ int SoapyTujaSDR::activateStream(SoapySDR::Stream *stream,
 int SoapyTujaSDR::deactivateStream(SoapySDR::Stream *stream, const int flags, const long long timeNs)
 {
     const int direction = *reinterpret_cast<int *>(stream);
+    snd_pcm_state_t snd_state;
     int err = 0;
     
-    if (direction == SOAPY_SDR_RX) {
-        SoapySDR_log(SOAPY_SDR_INFO, "deactivate capture");
-        err = snd_pcm_drop(d_pcm_capture_handle); // stop and drop
-    }
-    else if (direction == SOAPY_SDR_TX) {
-        SoapySDR_log(SOAPY_SDR_INFO, "deactivate playback");
-        err = snd_pcm_drop(d_pcm_playback_handle); // stop and drop
+    switch (direction) {
+        case SOAPY_SDR_RX:
+            snd_state = snd_pcm_state(d_pcm_capture_handle);
+            if(snd_state == SND_PCM_STATE_RUNNING) {
+                err = snd_pcm_drop(d_pcm_capture_handle); // stop and drop
+            }
+            if(err < 0) {
+                SoapySDR_logf(SOAPY_SDR_ERROR, "deactivateStream (SOAPY_SDR_RX): %s snd_pcm_drop %s",
+                              alsa_state_str(snd_state), snd_strerror(err));
+                return err;
+            } break;
+        case SOAPY_SDR_TX:
+            snd_state = snd_pcm_state(d_pcm_playback_handle);
+            if(snd_state == SND_PCM_STATE_RUNNING) {
+                err = snd_pcm_drop(d_pcm_playback_handle); // stop and drop
+            }
+            if (err < 0) {
+                SoapySDR_logf(SOAPY_SDR_ERROR, "deactivateStream (SOAPY_SDR_RX): %s snd_pcm_drop %s",
+                              alsa_state_str(snd_state), snd_strerror(err));
+                return err;
+            } break;
     }
     
     return err;
@@ -270,78 +299,78 @@ int SoapyTujaSDR::readStream(SoapySDR::Stream *stream,
                              long long &timeNs,
                              const long timeoutUs)
 {
-    snd_pcm_sframes_t n_err;
-    int err;
+    snd_pcm_sframes_t n_err = 0;
+    int err = 0;
     
     // This function has to be well defined at all times
     if (d_pcm_capture_handle == nullptr) {
-        SoapySDR_log(SOAPY_SDR_ERROR, "readStream d_pcm_capture_handle == nullptr");
+        SoapySDR_log(SOAPY_SDR_FATAL, "readStream d_pcm_capture_handle == nullptr");
         return SOAPY_SDR_STREAM_ERROR;
     }
     
-    // TODO: This checking is slightly convoluted. Could probably be handled better.
-    // What state are we in?
     snd_pcm_state_t snd_state = snd_pcm_state(d_pcm_capture_handle);
     switch (snd_state) {
+        case SND_PCM_STATE_OPEN:
+            // not setup properly, we should not get here.
+            SoapySDR_logf(SOAPY_SDR_FATAL, "snd_state == SND_PCM_STATE_OPEN");
+            return SOAPY_SDR_STREAM_ERROR;
         case SND_PCM_STATE_SETUP:
+            // not prepared
             if((err = snd_pcm_prepare(d_pcm_capture_handle)) < 0) {
-                SoapySDR_logf(SOAPY_SDR_ERROR, "snd_pcm_prepare: %s", snd_strerror(err));
+                // could not prepare
+                SoapySDR_logf(SOAPY_SDR_ERROR, "snd_pcm_prepare %s", snd_strerror(err));
                 return SOAPY_SDR_STREAM_ERROR;
-            }
-            // fallthrough
+            } // fallthrough
         case SND_PCM_STATE_PREPARED:
-            if ((err = snd_pcm_start(d_pcm_capture_handle)) < 0) {
-                SoapySDR_logf(SOAPY_SDR_ERROR, "snd_pcm_start: %s", snd_strerror(err));
+            // not started
+            if((err = snd_pcm_start(d_pcm_capture_handle)) < 0) {
+                // could not start
+                SoapySDR_logf(SOAPY_SDR_ERROR, "snd_pcm_start %s", snd_strerror(err));
                 return SOAPY_SDR_STREAM_ERROR;
-            }
-            break;
+            } // fallthrough
         case SND_PCM_STATE_RUNNING:
-            // this is good
-            break;
+            if(snd_pcm_wait(d_pcm_capture_handle, int(timeoutUs / 1000.f)) == 0) {
+                SoapySDR_logf(SOAPY_SDR_INFO, "readStream timeout");
+                return SOAPY_SDR_TIMEOUT;
+            }
+            // not timed out, try to read
+            n_err = snd_pcm_readi(d_pcm_capture_handle,
+                                  d_buff_rx.data(),
+                                  std::min<size_t>(numElems, d_period_frames));
+            // Ok?
+            if(n_err >= 0) {
+                // read ok, convert and return.
+                d_converter_func_rx(d_buff_rx.data(), buffs[0], n_err, 1.0);
+                return (int) n_err;
+            } // error, fallthrough
         case SND_PCM_STATE_XRUN:
-            SoapySDR_log(SOAPY_SDR_ERROR, "xrun");
-            // will be handled later
-            break;
-        default:
-            // should not end up here.
-            SoapySDR_logf(SOAPY_SDR_INFO, "DEFAULT!! %d", snd_state);
+            // try to recover
+            if(snd_pcm_recover(d_pcm_capture_handle, (int) n_err, 0) == 0) {
+                SoapySDR_logf(SOAPY_SDR_INFO, "readStream recoverd from overflow");
+                // Recovered, let Soapy call us again
+                return SOAPY_SDR_OVERFLOW;
+            } else {
+                if ((int)n_err == -EBADFD) {
+                    // -EBADFD = file descriptor in bad state meaning the device was closed,
+                    // this is expected.
+                    SoapySDR_logf(SOAPY_SDR_INFO,
+                                  "snd_pcm_recover: %s",
+                                  snd_strerror((int)n_err));
+                    return SOAPY_SDR_STREAM_ERROR;
+                } else {
+                    SoapySDR_logf(SOAPY_SDR_ERROR,
+                                  "snd_pcm_recover: %s",
+                                  snd_strerror((int)n_err));
+                    return SOAPY_SDR_STREAM_ERROR;
+                }
+            } // this clause always returns
+        case SND_PCM_STATE_DRAINING:
+        case SND_PCM_STATE_PAUSED:
+        case SND_PCM_STATE_SUSPENDED:
+        case SND_PCM_STATE_DISCONNECTED:
+            SoapySDR_logf(SOAPY_SDR_ERROR, "bad ALSA state: %s", snd_state);
             return SOAPY_SDR_STREAM_ERROR;
     }
-    
-    // Timeout if not ready
-    if(snd_pcm_wait(d_pcm_capture_handle, int(timeoutUs / 1000)) == 0) {
-        SoapySDR_log(SOAPY_SDR_ERROR, "readStream snd_pcm_wait timeout");
-        return SOAPY_SDR_TIMEOUT;
-    }
-    
-    // Read from ALSA
-    // read numElems or d_period_size whichever the smallest
-    n_err = std::min<size_t>(numElems, d_period_frames);
-    n_err = snd_pcm_readi(d_pcm_capture_handle, d_buff_rx.data(), n_err);
-    // try to handle xruns
-    if(n_err < 0) {
-        if(snd_pcm_recover(d_pcm_capture_handle, (int) n_err, 0) == 0) {
-            SoapySDR_logf(SOAPY_SDR_INFO, "readStream recoverd from overflow");
-            // Recovered, let Soapy call us again
-            return SOAPY_SDR_OVERFLOW;
-        } else {
-            // -EBADFD = file descriptor in bad state meaning the device was closed.
-            if ((int)n_err == -EBADFD) {
-                SoapySDR_logf(SOAPY_SDR_INFO, "snd_pcm_recover: %s", snd_strerror((int)n_err));
-                return 0;
-            } else {
-                SoapySDR_logf(SOAPY_SDR_ERROR, "snd_pcm_recover: %s", snd_strerror((int)n_err));
-                return SOAPY_SDR_STREAM_ERROR;
-            }
-        }
-    }
-    
-    assert(n_err > 0);
-    
-    // Ok, convert. Format is setup in setupStream. Scaler = 1.0
-    d_converter_func_rx(d_buff_rx.data(), buffs[0], n_err, 1.0);
-    
-    return (int)n_err;
 }
 
 int SoapyTujaSDR::writeStream (SoapySDR::Stream *stream,
@@ -352,67 +381,68 @@ int SoapyTujaSDR::writeStream (SoapySDR::Stream *stream,
                                const long timeoutUs)
 {
     snd_pcm_sframes_t n_err;
+    size_t n;
     int err;
     
     if (d_pcm_playback_handle == nullptr) {
         return SOAPY_SDR_STREAM_ERROR;
     }
     
-    // TODO: This checking is slightly convoluted. Could probably be handled better.
-    // Are we prepared or running?
     snd_pcm_state_t snd_state = snd_pcm_state(d_pcm_playback_handle);
     switch (snd_state) {
+        case SND_PCM_STATE_OPEN:
+            // not setup properly, we should not get here.
+            SoapySDR_logf(SOAPY_SDR_FATAL, "writeStream: snd_state == SND_PCM_STATE_OPEN");
+            return SOAPY_SDR_STREAM_ERROR;
         case SND_PCM_STATE_SETUP:
             if((err = snd_pcm_prepare(d_pcm_playback_handle)) < 0) {
-                SoapySDR_logf(SOAPY_SDR_ERROR, "snd_pcm_prepare: %s", snd_strerror(err));
+                SoapySDR_logf(SOAPY_SDR_ERROR, "writeStream: snd_pcm_prepare: %s", snd_strerror(err));
                 return SOAPY_SDR_STREAM_ERROR;
             }
-            break;
-        case SND_PCM_STATE_PREPARED:
             break;
         case SND_PCM_STATE_RUNNING:
+            // if running wait
             if(snd_pcm_wait(d_pcm_playback_handle, int(timeoutUs / 1000)) == 0) {
                 return SOAPY_SDR_TIMEOUT;
-            }
-            break;
+            } // fallthrough
+        case SND_PCM_STATE_PREPARED:
+
+            // not started, it will autostart when buffer is full
+            n = std::min<size_t>(numElems, d_period_frames);
+            d_converter_func_tx(buffs[0], d_buff_tx.data(), n, 1.0);
+            n_err = snd_pcm_writei(d_pcm_playback_handle,
+                                   d_buff_tx.data(),
+                                   n);
+            if (n_err > 0) {
+                // ok return
+                // printf("write %d\n", n_err);
+                return (int) n_err;
+            }  // error, fallthrough
         case SND_PCM_STATE_XRUN:
-            SoapySDR_log(SOAPY_SDR_ERROR, "xrun");
-            // will be handled later
-            break;
-        default:
+            if((n_err = snd_pcm_recover(d_pcm_playback_handle, (int) n_err, 0)) == 0) {
+                SoapySDR_logf(SOAPY_SDR_INFO, "writeStream recoverd from underflow");
+                // Recovered, let Soapy call us again
+                return SOAPY_SDR_UNDERFLOW;
+            } else {
+                // could not recover, check error
+                if ((int)n_err == -EBADFD) {
+                    // device was closed
+                    SoapySDR_logf(SOAPY_SDR_INFO, "writeStream: snd_pcm_recover: %s", snd_strerror((int)n_err));
+                    return 0;
+                } else {
+                    // some other error
+                    SoapySDR_logf(SOAPY_SDR_ERROR, "writeStream: snd_pcm_recover: %s", snd_strerror((int)n_err));
+                    return SOAPY_SDR_STREAM_ERROR;
+                } // always returns
+            }
+        case SND_PCM_STATE_DRAINING:
+        case SND_PCM_STATE_PAUSED:
+        case SND_PCM_STATE_SUSPENDED:
+        case SND_PCM_STATE_DISCONNECTED:
             // should not end up here.
-            SoapySDR_logf(SOAPY_SDR_INFO, "DEFAULT!! %d", snd_state);
+            SoapySDR_logf(SOAPY_SDR_ERROR, "bad ALSA state: %s", snd_state);
             return SOAPY_SDR_STREAM_ERROR;
     }
-    
-    // number of elements or error
-    // convert at most this number of elements
-    n_err = std::min<size_t>(numElems, d_period_frames);
-    assert(n_err > 0);
-    // convert from input format to output format
-    d_converter_func_tx(buffs[0], d_buff_tx.data(), n_err, 1.0);
-    
-    //snd_pcm_sframes_t avail = 0, delay = 0;
-    //snd_pcm_avail_delay(d_pcm_playback_handle, &avail, &delay);
-    
-    n_err = snd_pcm_writei(d_pcm_playback_handle, d_buff_tx.data(), n_err);
-    if(n_err < 0) {
-        if((n_err = snd_pcm_recover(d_pcm_playback_handle, (int) n_err, 0)) == 0) {
-            SoapySDR_logf(SOAPY_SDR_INFO, "writeStream recoverd from underflow");
-            return SOAPY_SDR_UNDERFLOW;
-        } else {
-            // -EBADFD = file descriptor in bad state meaning the device was closed.
-            if ((int)n_err == -EBADFD) {
-                SoapySDR_logf(SOAPY_SDR_INFO, "snd_pcm_recover: %s", snd_strerror((int)n_err));
-                return 0;
-            } else {
-                SoapySDR_logf(SOAPY_SDR_ERROR, "snd_pcm_recover: %s", snd_strerror((int)n_err));
-                return SOAPY_SDR_STREAM_ERROR;
-            }
-        }
-    }
-    
-    return (int)n_err;
 }
 
 
@@ -530,11 +560,6 @@ void SoapyTujaSDR::setFrequency(const int direction,
     if (name == "RF" && d_center_frequency != frequency)
     {
         tuja_set_frequency(d_tuja, frequency);
-        
-        /*d_freq_f << int(frequency);
-         d_freq_f.clear();
-         d_freq_f.seekg(0, std::ios::beg);*/
-        
         d_center_frequency = frequency;
     }
 }
@@ -573,7 +598,6 @@ SoapySDR::ArgInfoList SoapyTujaSDR::getFrequencyArgsInfo(const int direction, co
     SoapySDR::ArgInfoList freqArgs;
     // TODO: frequency arguments
     return freqArgs;
-    
 }
 
 void SoapyTujaSDR::setSampleRate(const int direction, const size_t channel, const double rate)
@@ -674,4 +698,3 @@ static SoapySDR::ConverterRegistry registerVolkCS32toCS16(SOAPY_SDR_CS32, SOAPY_
 
 // Register driver
 static SoapySDR::Registry registerTujaSDR("tujasdr", &findTujaSDR, &makeTujaSDR, SOAPY_SDR_ABI_VERSION);
-

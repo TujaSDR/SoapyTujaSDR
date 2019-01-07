@@ -16,6 +16,8 @@ extern "C"
 {
 #endif
     
+    const char* alsa_state_str(snd_pcm_state_t state);
+    
     snd_pcm_t* alsa_pcm_handle(const char* pcm_name,
                                unsigned int rate,
                                const unsigned int periods,
